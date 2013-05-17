@@ -34,7 +34,11 @@ namespace WaterTankMonitor.Sensors.OneWire
 
         public CW.NETMF.Hardware.OneWire OneWire { get; private set; }
 
-        public void PollBus()
+        /// <summary>
+        /// Finds all the temperature sensors on the bus.
+        /// </summary>
+        /// <returns>The list of temperature sensors.</returns>
+        public ArrayList FindTempSensors()
         {
             //---------------------------------------------------------------------
             // Reset/Presence
@@ -66,6 +70,8 @@ namespace WaterTankMonitor.Sensors.OneWire
                 }
             }
 
+            var sensors = new ArrayList();
+
             //---------------------------------------------------------------------
             // Search ROM: First & Next (Enumerate all devices)
             var deviation = 0;  // Search result
@@ -76,99 +82,17 @@ namespace WaterTankMonitor.Sensors.OneWire
                 if (CW.NETMF.Hardware.OneWire.ComputeCRC(rom, count: 7) == rom[7])
                 {
                     Debug.Print(OneWireExtensions.BytesToHexString(rom));
+
+                    if (rom[0] == DS18B20.FamilyCode)
+                    {
+                        sensors.Add(new DS18B20(OneWire, rom));
+                        rom = new byte[8];
+                    }
                 }
             }
             while (deviation > 0);
 
-            //---------------------------------------------------------------------
-            // Search ROM: Verify (Is device with a known ROM present on the bus?)
-            if (deviation == 0)
-            {
-                // Previous search succeeded, search for the last device
-            }
-            else
-            {
-                // TODO: Fill rom with the value to search for
-            }
-            var foundRom = new byte[8];
-            Array.Copy(rom, foundRom, 8); // Save the ROM for comparison
-            if (OneWire.Search(foundRom, 64) == 0)
-            {
-                // If the search was successful and the foundRom remains the ROM number
-                // that was being searched for, then the device is currently on the bus.
-                if (rom[7] == foundRom[7]) // Comparing CRC is enough for test purposes
-                {
-                    Debug.Print("Device is on the bus");
-
-                    // It is now possible to communicate with the active slave without
-                    // specifically addressing it
-                    if (rom[0] == DS18B20.FamilyCode)
-                    {
-                        var scratchpad = new byte[9];
-                        OneWire.WriteByte(DS18B20.ReadScratchpad);
-                        OneWire.Read(scratchpad);
-                        if (CW.NETMF.Hardware.OneWire.ComputeCRC(scratchpad, count: 8) == scratchpad[8])
-                        {
-                            // Default scratchpad content (assignments just for reference)
-                            scratchpad[0] = 0x50; // Temperature LSB
-                            scratchpad[1] = 0x05; // Temperature MSB
-                            scratchpad[5] = 0xFF; // Reserved
-                            scratchpad[7] = 0x10; // Reserved
-                        }
-                    }
-                }
-            }
-
-            //---------------------------------------------------------------------
-            // DS18B20 Programmable Resolution Digital Thermometer
-            if (rom[0] == DS18B20.FamilyCode)
-            {
-                OneWire.Reset();
-                OneWire.WriteByte(CW.NETMF.Hardware.OneWire.SkipRom); // Address all devices
-                OneWire.WriteByte(DS18B20.ConvertT);
-                Thread.Sleep(750);  // Wait Tconv (for default 12-bit resolution)
-
-                // Write command and identifier at once
-                var matchRom = new byte[9];
-                Array.Copy(rom, 0, matchRom, 1, 8);
-                matchRom[0] = CW.NETMF.Hardware.OneWire.MatchRom;
-
-                OneWire.Reset();
-                OneWire.Write(matchRom);
-                OneWire.WriteByte(DS18B20.ReadScratchpad);
-
-                // Read just the temperature (2 bytes)
-                var tempLo = OneWire.ReadByte();
-                var tempHi = OneWire.ReadByte();
-                Debug.Print(DS18B20.GetTemperature(tempLo, tempHi).ToString());
-
-                // Read power supply mode
-                OneWire.Reset();
-                OneWire.Write(matchRom);
-                OneWire.WriteByte(DS18B20.ReadPowerSupply);
-                if (OneWire.ReadBit() == 0)
-                {
-                    // Note: VDD must be connected to ground
-                    Debug.Print("Parasite powered");
-                }
-                else
-                {
-                    // Powered by an external supply, supports progress feedback
-                    OneWire.Reset();
-                    OneWire.Write(matchRom);
-                    OneWire.WriteByte(DS18B20.ConvertT);
-                    while (OneWire.ReadBit() == 0) { };
-
-                    OneWire.Reset();
-                    OneWire.Write(matchRom);
-                    OneWire.WriteByte(DS18B20.ReadScratchpad);
-
-                    // Read just the temperature (2 bytes)
-                    tempLo = OneWire.ReadByte();
-                    tempHi = OneWire.ReadByte();
-                    Debug.Print(DS18B20.GetTemperature(tempLo, tempHi).ToString());
-                }
-            }
+            return sensors;
         }
     }
 }

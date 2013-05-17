@@ -17,8 +17,8 @@ namespace WaterTankMonitor
         {
             var rangeSensor = new HC_SR04(Pins.GPIO_PIN_D0, Pins.GPIO_PIN_D1);
             var dhtSensor = new Dht11Sensor(Pins.GPIO_PIN_D2, Pins.GPIO_PIN_D3, PullUpResistor.External);
-            var oneWire = new OneWire(Pins.GPIO_PIN_D4);
-            var oneWireBus = new OneWireBus(oneWire);
+            var oneWireBus = new OneWireBus(new OneWire(Pins.GPIO_PIN_D4));
+            var tempSensor = (DS18B20)oneWireBus.FindTempSensors()[0];
 
             while (true)
             {
@@ -44,7 +44,10 @@ namespace WaterTankMonitor
                     WriteLine("dht-temp.value U");
                 }
 
-                oneWireBus.PollBus();
+                tempSensor.Read();
+                WriteLine("temp.value " + tempSensor.Temperature.ToString("F1"));
+
+                Thread.Sleep(300 * 1000); // 5mins
             }
         }
 
