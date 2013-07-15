@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using System.Text;
 using CW.NETMF.Hardware;
 using Microsoft.SPOT;
 using Microsoft.SPOT.Hardware;
@@ -7,12 +8,17 @@ using SecretLabs.NETMF.Hardware.Netduino;
 using CW.NETMF.Sensors;
 using CW.NETMF;
 using WaterTankMonitor.Sensors.Range;
+using Toolbox.NETMF.NET;
 using WaterTankMonitor.Sensors.OneWire;
 
 namespace WaterTankMonitor
 {
     public class Program
     {
+        private static bool _writeToNetwork = false;
+        private static ushort _networkPort = 12345;
+        private static string _networkAddress = "192.168.15.3";
+
         public static void Main()
         {
             var rangeSensor = new HC_SR04(Pins.GPIO_PIN_D0, Pins.GPIO_PIN_D1);
@@ -22,30 +28,34 @@ namespace WaterTankMonitor
 
             while (true)
             {
+                StringBuilder status = new StringBuilder();
+
                 var tankDepth = rangeSensor.Ping();
                 
                 if (tankDepth > 0)
                 {
-                    WriteLine("depth.value " + tankDepth);
+                    status.Append("depth.value " + tankDepth + "\n");
                 }
                 else
                 {
-                    WriteLine("depth.value U");
+                    status.Append("depth.value U\n");
                 }
                 
                 if (dhtSensor.Read())
                 {
-                    WriteLine("humidity.value " + dhtSensor.Humidity.ToString("F1"));
-                    WriteLine("dht-temp.value " + dhtSensor.Temperature.ToString("F1"));
+                    status.Append("humidity.value " + dhtSensor.Humidity.ToString("F1") + "\n");
+                    status.Append("dht-temp.value " + dhtSensor.Temperature.ToString("F1") + "\n");
                 }
                 else
                 {
-                    WriteLine("humidity.value U");
-                    WriteLine("dht-temp.value U");
+                    status.Append("humidity.value U\n");
+                    status.Append("dht-temp.value U\n");
                 }
 
                 tempSensor.Read();
-                WriteLine("temp.value " + tempSensor.Temperature.ToString("F1"));
+                status.Append("temp.value " + tempSensor.Temperature.ToString("F1") + "\n");
+
+                WriteLine(status.ToString());
 
                 Thread.Sleep(300 * 1000); // 5mins
             }
@@ -53,6 +63,23 @@ namespace WaterTankMonitor
 
         static void WriteLine(string line)
         {
+            if (_writeToNetwork)
+            {
+                SimpleSocket socket = new IntegratedSocket(_networkAddress, _networkPort);
+
+                try
+                {
+                    socket.Connect();
+                    
+                    socket.Send(line);
+                    socket.Send("\r\n");
+                }
+                finally
+                {
+                    socket.Close();
+                }
+            }
+
             Debug.Print(line);
         }
     }
